@@ -108,7 +108,7 @@ async def main():
         print("EXECUTION SUMMARY")
         print("="*80)
         print(f"\n  Workflow Metrics:")
-        print(f"   • Total Stages: 6")
+        print(f"   • Total Stages: 7")
         print(f"   • Research Iterations: {workflow_results['stage_3_research']['iterations_run']}")
         print(f"   • Sources Found: {workflow_results['stage_2_sources']['aggregated_sources'].get('total_sources', 0)}")
         print(f"   • Credibility Score: {workflow_results['stage_4_fact_check'].get('credibility_score', 0):.2f}")
