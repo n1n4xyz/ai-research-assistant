@@ -71,7 +71,7 @@ Model: `gemini-2.5-flash-lite` on Vertex AI, region `us-central1`. The starter d
 
 **Score plateau.** The researcher revised the answer twice based on the feedback, yet the critic scored all three drafts at 0.85 and the loop returned the last draft after max_iterations. Feedback and revisions did not converge. Two changes for a next version: pass the critic's `weaknesses` list to the researcher as an explicit checklist, and run the critic on a stronger model than the generator.
 
-**Limits of the simulated tools.** The search agents generate plausible sources instead of querying real APIs, so titles, authors and URLs in the bibliography are not verified. The fact checker compares claims against model knowledge only. A credibility score of 0.95 reflects internal consistency, not independent verification.
+**Limits of the simulated tools.** The search agents generate plausible sources instead of querying real APIs, so titles, authors and URLs in the bibliography are not verified. The citation agent fills missing metadata with placeholders such as `Author, A. A. (Year)`, because the simulated web and Scholar results carry no authors or dates. The fact checker compares claims against model knowledge only. A credibility score of 0.95 reflects internal consistency, not independent verification.
 
 **Metrics.** The stricter critic lowered the performance score from 0.95 to 0.85, although the final answer went through two more revision rounds. The evaluator counts 0.85 as excellent, so the health status did not change. The performance score tracks the critic's calibration as much as the answer quality.
 
