@@ -1,0 +1,7 @@
+# Google AI and Vertex AI
+google-genai>=1.59.0
+google-adk>=1.22.1
+google-auth>=2.47.0
+
+# Configuration
+python-dotenv>=1.2.1
