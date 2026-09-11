@@ -3,8 +3,8 @@ from typing import Dict, Any
 from google import genai
 from agents.researcher import execute_research_loop
 from agents.source_gatherer import execute_source_gathering
+from agents.router import DomainClassifierAgent
 from agents.other_agents import (
-    DomainClassifierAgent,
     FactCheckAgent,
     SynthesisAgent,
     CitationAgent
@@ -28,6 +28,7 @@ async def execute_research_workflow(
     - Stage 4: Fact Checking (LlmAgent)
     - Stage 5: Synthesis (LlmAgent)
     - Stage 6: Citation Generation (LlmAgent)
+    - Stage 7: Performance Evaluation
 
     Args:
         client: Configured genai.Client
@@ -82,6 +83,7 @@ async def execute_research_workflow(
 
     sources = await execute_source_gathering(client=client, query=query, model=model)
     workflow_results['stage_2_sources'] = sources
+    print(f"   → Handing {len(sources['aggregated_sources'].get('top_sources', []))} top sources to Stage 3")
 
     # ========================================================================
     # STAGE 3: Research Refinement
@@ -90,11 +92,13 @@ async def execute_research_workflow(
     print("STAGE 3: Research Refinement")
     print("-"*80)
 
+    # Stage 2 -> Stage 3: gathered sources ground the research loop
     research = await execute_research_loop(
         client=client,
         query=query,
         max_iterations=max_iterations,
-        model=model
+        model=model,
+        sources=sources
     )
     workflow_results['stage_3_research'] = research
 
@@ -158,51 +162,35 @@ async def execute_research_workflow(
     workflow_results['stage_6_citations'] = citations
 
     # ========================================================================
-    # WORKFLOW SUMMARY
-    # ========================================================================
-    print("\n" + "="*80)
-    print("WORKFLOW COMPLETED")
-    print("="*80)
-    print(f"\n. All 7 stages executed successfully")
-    print(f"\n. Results Summary:")
-    print(f"   • Query: {query}")
-    print(f"   • Domain: {classification.get('domain', 'unknown')}")
-    print(f"   • Sources Found: {sources['aggregated_sources'].get('total_sources', 0)}")
-    print(f"   • Research Iterations: {research['iterations_run']}")
-    print(f"   • Credibility Score: {fact_check.get('credibility_score', 0):.2f}")
-    print(f"   • Citations: {citations.get('total_citations', 0)}")
-    print(f"\n  Execution Method:")
-    print(f"   ✓ All agents inherit from ADK base classes")
-    print(f"   ✓ Executed via agent.run_async() with genai.Client")
-    print(f"   ✓ No ADK server deployment required")
-    print(f"   ✓ Real LLM output from Vertex AI Gemini")
-
-    # ========================================================================
     # STAGE 7: Performance Evaluation
     # ========================================================================
-    # TODO 8: Track workflow performance metrics 
-    #
-    # Instantiate PerformanceEvaluator and record the workflow results.
-    #
-    # Steps:
-    # 1. Calculate execution time
-    # 2. Create evaluator
-    # 3. Record metrics
-    # 4. Get summary
-    # 5. Add to workflow_results
-   
     print("\n" + "-"*80)
     print("STAGE 7: Performance Evaluation")
     print("-"*80)
 
-    # TODO 8: Implement performance evaluation here
-    # Replace the None values below with actual implementation
+    # TODO 8 (done): track workflow performance metrics
+    # 1. Execution time across stages 1-6
+    execution_time = time.time() - start_time
 
-    execution_time = None  # REPLACE: Calculate execution time
-    evaluator = None       # REPLACE: Create PerformanceEvaluator instance
-    performance_summary = None  # REPLACE: Get performance summary after recording metrics
+    # 2. Evaluator
+    evaluator = PerformanceEvaluator()
 
-    # This section will work once you complete TODO 8
+    # 3. Record metrics for this query
+    evaluator.evaluate_query_result(
+        result={
+            'quality_score': research.get('final_quality_score', 0.0),
+            'sources_found': sources['aggregated_sources'].get('total_sources', 0),
+            'iterations': research['iterations_run'],
+            'fact_checks': len(fact_check.get('verified_claims', [])) + len(fact_check.get('questionable_claims', [])),
+            'citations_count': citations.get('total_citations', 0)
+        },
+        processing_time=execution_time
+    )
+
+    # 4. Summary with health status, score and bottlenecks
+    performance_summary = evaluator.analyze_performance()
+
+    # 5. Added to workflow_results below
     if execution_time and evaluator and performance_summary:
         print(f"   ✓ Execution Time: {execution_time:.2f}s")
         print(f"   ✓ Performance Score: {performance_summary['performance_score']:.2f}")
@@ -223,6 +211,33 @@ async def execute_research_workflow(
         print(f"   ⚠️  Performance evaluation not implemented (complete TODO 8)")
         workflow_results['stage_7_performance'] = None
 
+    # ========================================================================
+    # WORKFLOW SUMMARY
+    # ========================================================================
+    print("\n" + "="*80)
+    print("WORKFLOW COMPLETED")
+    print("="*80)
+    print(f"\n. All 7 stages executed successfully")
+    print(f"\n. Results Summary:")
+    print(f"   • Query: {query}")
+    print(f"   • Domain: {classification.get('domain', 'unknown')}")
+    print(f"   • Sources Found: {sources['aggregated_sources'].get('total_sources', 0)}")
+    print(f"   • Research Iterations: {research['iterations_run']}")
+    print(f"   • Final Quality Score: {research.get('final_quality_score', 0.0):.2f}")
+    print(f"   • Credibility Score: {fact_check.get('credibility_score', 0):.2f}")
+    print(f"   • Citations: {citations.get('total_citations', 0)}")
+    if performance_summary:
+        print(f"   • Execution Time: {execution_time:.2f}s")
+        print(f"   • Performance Score: {performance_summary['performance_score']:.2f}")
+        print(f"   • Health Status: {performance_summary['health_status']}")
+        for rec in performance_summary.get('recommendations', []):
+            print(f"   • Recommendation: {rec}")
+    print(f"\n  Execution Method:")
+    print(f"   ✓ All agents inherit from ADK base classes")
+    print(f"   ✓ Executed via agent.run_async() with genai.Client")
+    print(f"   ✓ No ADK server deployment required")
+    print(f"   ✓ Real LLM output from Vertex AI Gemini")
+
     return workflow_results
 
 
@@ -242,6 +257,8 @@ def generate_research_report(workflow_results: Dict[str, Any]) -> str:
     fact_check = workflow_results['stage_4_fact_check']
     synthesis = workflow_results['stage_5_synthesis']
     citations = workflow_results['stage_6_citations']
+    performance = workflow_results.get('stage_7_performance') or {}
+    perf_summary = performance.get('performance_summary', {})
 
     report = f"""
 # Research Report: {query}
@@ -282,7 +299,7 @@ def generate_research_report(workflow_results: Dict[str, Any]) -> str:
 
 ## Quality Assessment
 
-**Research Quality Score:** {research.get('final_answer', {}).get('confidence', 'unknown')}
+**Research Quality Score:** {research.get('final_quality_score', 0.0):.2f}/1.00 (researcher confidence: {research.get('final_answer', {}).get('confidence', 'unknown')})
 **Credibility Score:** {fact_check.get('credibility_score', 0):.2f}/1.00
 **Coherence Score:** {synthesis.get('coherence_score', 0):.2f}/1.00
 
@@ -322,8 +339,12 @@ This research report was generated using an ADK-based multi-agent system with th
 4. **Fact Checking** (LlmAgent validation)
 5. **Synthesis** (LlmAgent integration)
 6. **Citation Formatting** (LlmAgent academic standards)
+7. **Performance Evaluation** (PerformanceEvaluator metrics)
 
 **Model:** {workflow_results['model']}
+**Execution Time:** {performance.get('execution_time', 0):.2f}s
+**Performance Score:** {perf_summary.get('performance_score', 0):.2f}
+**Health Status:** {perf_summary.get('health_status', 'n/a')}
 
 ---
 

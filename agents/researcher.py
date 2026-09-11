@@ -219,21 +219,18 @@ def create_research_loop_agent(model: str = "gemini-2.0-flash",
     Returns:
         LoopAgent configured for research refinement
     """
-    # TODO 1: Create the two agents for the LoopAgent
-    #
-    # Create the generator and validator agents:
-    # - ResearcherAgent: The generator that creates/improves answers
-    # - ResearchCriticAgent: The validator that evaluates quality
+    # TODO 1 (done): generator and validator agents
+    researcher = ResearcherAgent(model=model)    # generator: drafts and refines answers
+    critic = ResearchCriticAgent(model=model)    # validator: scores quality, decides stop/continue
 
-    researcher = None  # REPLACE: Create ResearcherAgent here
-    critic = None      # REPLACE: Create ResearchCriticAgent here
-
-    # TODO 2: Compose agents into LoopAgent
-    #
-    # Create a LoopAgent that will run the researcher and critic iteratively.
-    #
-
-    refinement_loop = None  # REPLACE: Create LoopAgent here
+    # TODO 2 (done): compose both into a LoopAgent (generator-validator pattern).
+    # Order matters: researcher runs first, critic evaluates its output.
+    # max_iterations is the safety limit if the critic never approves.
+    refinement_loop = LoopAgent(
+        name="research_refinement_loop",
+        sub_agents=[researcher, critic],
+        max_iterations=max_iterations,
+    )
 
     return refinement_loop
 
@@ -242,7 +239,8 @@ async def execute_research_loop(
     client: genai.Client,
     query: str,
     max_iterations: int = 3,
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-2.0-flash",
+    sources: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Execute iterative research refinement using ADK LoopAgent.
@@ -252,6 +250,7 @@ async def execute_research_loop(
         query: Research question
         max_iterations: Maximum loop iterations
         model: Gemini model name
+        sources: Output of execute_source_gathering (Stage 2), used to ground the answer
 
     Returns:
         Dictionary with final answer and iteration history
@@ -274,6 +273,22 @@ async def execute_research_loop(
 
     # Manually execute the loop logic (part - can't use ADK deployment)
     context = []
+
+    # Stage 2 -> Stage 3 data flow: seed the loop context with the gathered sources
+    top_sources = (sources or {}).get('aggregated_sources', {}).get('top_sources', [])
+    if top_sources:
+        compact_sources = [
+            {k: src.get(k) for k in ('title', 'type', 'url', 'snippet') if src.get(k)}
+            for src in top_sources
+        ]
+        context.append({
+            'role': 'source_gatherer',
+            'content': "Gathered sources. Ground your answer in these and name them in sources_mentioned:\n"
+                       + json.dumps(compact_sources, indent=2)
+        })
+        print(f"   Grounding sources passed into loop: {len(compact_sources)}")
+    else:
+        print(f"   ⚠️  No gathered sources passed into loop")
     iteration_history = []
     final_answer = None
 
@@ -300,7 +315,11 @@ async def execute_research_loop(
             'content': json.dumps(evaluation)
         })
 
-        quality_score = evaluation.get('quality_score', 0.5)
+        try:
+            quality_score = float(evaluation.get('quality_score', 0.5))
+        except (TypeError, ValueError):
+            quality_score = 0.5
+        evaluation['quality_score'] = quality_score
         should_stop = evaluation.get('should_stop', False)
 
         print(f"      ✓ Quality: {evaluation.get('quality', 'unknown')} (score: {quality_score:.2f})")
@@ -330,9 +349,13 @@ async def execute_research_loop(
 
     print(f"   LoopAgent execution completed ({len(iteration_history)} iterations)")
 
+    final_quality_score = iteration_history[-1]['evaluation']['quality_score'] if iteration_history else 0.0
+
     return {
         'query': query,
         'final_answer': final_answer,
+        'final_quality_score': final_quality_score,
+        'sources_used': len(top_sources),
         'iterations_run': len(iteration_history),
         'iteration_history': iteration_history,
         'loop_agent': loop_agent,  # Include the actual LoopAgent object

@@ -1,4 +1,5 @@
 import json
+import time
 import asyncio
 from typing import Dict, Any, List
 from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
@@ -314,21 +315,17 @@ def create_source_gathering_workflow(model: str = "gemini-2.0-flash") -> Sequent
     scholar_search = ScholarSearchAgent(model=model)
     aggregator = SourceAggregatorAgent(model=model)
 
-    # TODO 3: Create ParallelAgent for concurrent searches
-    #
-    # Create a ParallelAgent that runs all three search agents concurrently.
-    # This is the "fan-out" part of the fan-out/fan-in pattern.
+    # TODO 3 (done): fan-out, all three searches run concurrently
+    parallel_searches = ParallelAgent(
+        name="parallel_source_searches",
+        sub_agents=[web_search, arxiv_search, scholar_search],
+    )
 
-    parallel_searches = None  # REPLACE: Create ParallelAgent here
-
-    # TODO 4: Wrap with SequentialAgent
-    #
-    # Create a SequentialAgent that orchestrates the workflow:
-    # 1. First runs the ParallelAgent (fan-out: all searches run concurrently)
-    # 2. Then runs the aggregator (fan-in: combines all results)
-
-
-    source_gathering_workflow = None  # REPLACE: Create SequentialAgent here
+    # TODO 4 (done): fan-in, parallel stage first, aggregator second
+    source_gathering_workflow = SequentialAgent(
+        name="source_gathering_workflow",
+        sub_agents=[parallel_searches, aggregator],
+    )
 
     return source_gathering_workflow
 
@@ -386,24 +383,26 @@ async def execute_source_gathering(
 
     async def run_web():
         print(f"      → {web_search.name} running...")
-        result = web_search.search(client, query)
+        result = await asyncio.to_thread(web_search.search, client, query)
         print(f"      ✓ {web_search.name}: Found {result.get('total_found', 0)} sources")
         return result
 
     async def run_arxiv():
         print(f"      → {arxiv_search.name} running...")
-        result = arxiv_search.search(client, query)
+        result = await asyncio.to_thread(arxiv_search.search, client, query)
         print(f"      ✓ {arxiv_search.name}: Found {result.get('total_found', 0)} sources")
         return result
 
     async def run_scholar():
         print(f"      → {scholar_search.name} running...")
-        result = scholar_search.search(client, query)
+        result = await asyncio.to_thread(scholar_search.search, client, query)
         print(f"      ✓ {scholar_search.name}: Found {result.get('total_found', 0)} sources")
         return result
 
     # Run all searches in parallel (parallel execution with asyncio.gather)
+    parallel_start = time.time()
     search_results = await asyncio.gather(run_web(), run_arxiv(), run_scholar())
+    print(f"      ✓ Parallel stage finished in {time.time() - parallel_start:.2f}s")
 
     # STAGE 2: Aggregate results (fan-in)
     print(f"\n   Stage 2: Aggregator (fan-in)")

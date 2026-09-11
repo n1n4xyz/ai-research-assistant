@@ -1,4 +1,7 @@
+import json
+from typing import Dict, Any
 from google.adk.agents import LlmAgent
+from google import genai
 from google.genai.types import GenerateContentConfig
 
 
@@ -61,9 +64,59 @@ Confidence guidelines:
 
 Be precise in classification but acknowledge uncertainty when present."""
 
-        # TODO 5: Initialize LlmAgent for domain classification 
+        # TODO 5 (done): LlmAgent for domain classification.
+        # Low temperature keeps routing deterministic, JSON output keeps it parseable.
+        super().__init__(
+            name="domain_classifier",
+            model=model,
+            instruction=instruction,
+            generate_content_config=GenerateContentConfig(
+                temperature=0.3,
+                max_output_tokens=512,
+                response_mime_type="application/json"
+            )
+        )
 
-        pass  # REPLACE THIS LINE: Initialize LlmAgent with super().__init__() here
+    def classify(self, client: genai.Client, query: str) -> Dict[str, Any]:
+        """Classify a research query using the agent's instruction and config.
+
+        Args:
+            client: Configured genai.Client
+            query: Research question
+
+        Returns:
+            Classification results
+        """
+        prompt = f"{self.instruction}\n\nuser: Classify this research query: {query}"
+
+        response = client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=self.generate_content_config
+        )
+
+        try:
+            result = json.loads(response.text)
+            try:
+                result['confidence'] = float(result.get('confidence', 0.5))
+            except (TypeError, ValueError):
+                result['confidence'] = 0.5
+            result['_metadata'] = {
+                'agent': self.name,
+                'execution': 'direct_genai_client'
+            }
+            return result
+        except (json.JSONDecodeError, TypeError):
+            return {
+                'domain': 'interdisciplinary',
+                'confidence': 0.5,
+                'complexity': 'moderate',
+                'reasoning': 'Classification failed',
+                'alternative_domains': [],
+                'recommended_sources': ['web', 'arxiv', 'scholar'],
+                'specialist_agent': 'interdisciplinary_specialist',
+                '_metadata': {'agent': self.name, 'error': 'json_parse_error'}
+            }
 
 
 class QueryComplexityAgent(LlmAgent):
