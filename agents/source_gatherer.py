@@ -7,6 +7,14 @@ from google import genai
 from google.genai.types import GenerateContentConfig
 
 
+def _finish_reason(response) -> str:
+    """Why the model stopped. MAX_TOKENS means the JSON was cut off."""
+    try:
+        return str(response.candidates[0].finish_reason)
+    except Exception:
+        return "unknown"
+
+
 class WebSearchAgent(LlmAgent):
     """Simulates web search using LLM (ADK LlmAgent)."""
 
@@ -42,7 +50,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.8,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -65,7 +73,8 @@ Output format (JSON):
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
+            print(f"      ⚠️  {self.name}: could not parse JSON (finish_reason: {_finish_reason(response)})")
             return {
                 'source_type': 'web',
                 'results': [],
@@ -112,7 +121,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.8,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -135,7 +144,8 @@ Output format (JSON):
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
+            print(f"      ⚠️  {self.name}: could not parse JSON (finish_reason: {_finish_reason(response)})")
             return {
                 'source_type': 'arxiv',
                 'results': [],
@@ -184,7 +194,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.8,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -207,7 +217,8 @@ Output format (JSON):
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
+            print(f"      ⚠️  {self.name}: could not parse JSON (finish_reason: {_finish_reason(response)})")
             return {
                 'source_type': 'scholar',
                 'results': [],
@@ -260,7 +271,7 @@ Select the top 10-15 most relevant sources."""
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=2048,
+                max_output_tokens=8192,
                 response_mime_type="application/json"
             )
         )
@@ -287,7 +298,8 @@ user: Please aggregate these search results:
                 'input_sources': len(search_results)
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
+            print(f"      ⚠️  {self.name}: could not parse JSON (finish_reason: {_finish_reason(response)})")
             total = sum(r.get('total_found', 0) for r in search_results)
             return {
                 'total_sources': total,

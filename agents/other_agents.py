@@ -83,7 +83,7 @@ Output format (JSON):
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {
                 'domain': 'general',
                 'confidence': 0.5,
@@ -129,7 +129,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=1024,
+                max_output_tokens=2048,
                 response_mime_type="application/json"
             )
         )
@@ -169,7 +169,7 @@ Key Points: {json.dumps(answer.get('key_points', []))}
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {
                 'verified_claims': [],
                 'questionable_claims': [],
@@ -216,7 +216,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.7,
-                max_output_tokens=2048,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -262,7 +262,7 @@ Top Sources: {len(sources.get('aggregated_sources', {}).get('top_sources', []))}
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {
                 'synthesis': answer.get('answer', 'Synthesis failed'),
                 'key_insights': answer.get('key_points', []),
@@ -312,7 +312,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.1,
-                max_output_tokens=1536,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -348,7 +348,7 @@ user: Generate citations for these sources:
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {
                 'citations': [],
                 'bibliography': '',

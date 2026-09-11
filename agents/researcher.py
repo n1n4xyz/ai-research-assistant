@@ -4,6 +4,10 @@ from google.adk.agents import LlmAgent, LoopAgent
 from google import genai
 from google.genai.types import GenerateContentConfig
 
+# Loop control: critic score needed to stop, and minimum researcher -> critic cycles
+QUALITY_THRESHOLD = 0.90
+MIN_ITERATIONS = 2
+
 
 class ResearcherAgent(LlmAgent):
     """
@@ -44,7 +48,7 @@ Focus on accuracy, clarity, and continuous improvement. Each iteration should sh
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.7,
-                max_output_tokens=1024,
+                max_output_tokens=3072,
                 response_mime_type="application/json"
             )
         )
@@ -87,7 +91,7 @@ Focus on accuracy, clarity, and continuous improvement. Each iteration should sh
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {
                 'answer': response.text,
                 'key_points': [],
@@ -122,9 +126,11 @@ Your role:
 4. Decide if answer is good enough to stop, or needs another iteration
 5. Calculate a quality score (0-1) based on your assessment
 
+Score strictly. A first draft rarely deserves more than 0.80.
+
 Quality criteria:
-- Excellent (0.90-1.00): Thorough, accurate, well-structured, comprehensive evidence
-- Good (0.80-0.89): Accurate and complete, all key points covered
+- Excellent (0.90-1.00): requires ALL of: at least 3 specific sources named in sources_mentioned, concrete evidence (numbers, benchmarks, named methods), limitations or failure modes, no generic filler
+- Good (0.80-0.89): Accurate and complete, but misses one of the Excellent requirements
 - Needs Improvement (0.50-0.79): Missing key points, needs more evidence or clarity
 - Poor (0.00-0.49): Incomplete, unclear, or potentially inaccurate
 
@@ -139,7 +145,7 @@ Output format (JSON):
   "reasoning": "Why to stop or continue"
 }
 
-Set should_stop=true ONLY if quality_score >= 0.80.
+Set should_stop=true ONLY if quality_score >= 0.90.
 Otherwise set should_stop=false to trigger another iteration."""
 
         # Initialize ADK LlmAgent
@@ -149,7 +155,7 @@ Otherwise set should_stop=false to trigger another iteration."""
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=768,
+                max_output_tokens=1024,
                 response_mime_type="application/json"
             )
         )
@@ -175,6 +181,7 @@ Question: {question}
 
 Answer: {answer.get('answer', 'No answer provided')}
 Key Points: {json.dumps(answer.get('key_points', []))}
+Sources Mentioned: {json.dumps(answer.get('sources_mentioned', []))}
 Confidence: {answer.get('confidence', 'unknown')}"""
 
         response = client.models.generate_content(
@@ -191,7 +198,7 @@ Confidence: {answer.get('confidence', 'unknown')}"""
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {
                 'quality': 'needs_improvement',
                 'quality_score': 0.5,
@@ -320,7 +327,11 @@ async def execute_research_loop(
         except (TypeError, ValueError):
             quality_score = 0.5
         evaluation['quality_score'] = quality_score
-        should_stop = evaluation.get('should_stop', False)
+        should_stop = bool(evaluation.get('should_stop', False)) and quality_score >= QUALITY_THRESHOLD
+        # Every first draft gets at least one refinement round from critic feedback
+        forced_refinement = should_stop and iteration < min(MIN_ITERATIONS, max_iterations)
+        if forced_refinement:
+            should_stop = False
 
         print(f"      ✓ Quality: {evaluation.get('quality', 'unknown')} (score: {quality_score:.2f})")
 
@@ -338,7 +349,10 @@ async def execute_research_loop(
             final_answer = answer
             break
         else:
-            print(f"      Quality below threshold - Continue refining...")
+            if forced_refinement:
+                print(f"      Threshold met, but minimum of {MIN_ITERATIONS} iterations not reached - Continue refining...")
+            else:
+                print(f"      Quality below threshold - Continue refining...")
             if iteration < max_iterations:
                 print(f"      Feedback: {evaluation.get('feedback', 'No feedback')[:80]}...")
 
