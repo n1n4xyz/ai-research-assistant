@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 *.tar.gz
 run.log
+.DS_Store
